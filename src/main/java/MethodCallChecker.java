@@ -3,16 +3,17 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
-import com.github.javaparser.ast.type.PrimitiveType;
 import org.apache.commons.text.similarity.JaroWinklerDistance;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.PrintStream;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -28,16 +29,41 @@ import java.util.stream.Stream;
 public class MethodCallChecker {
     private static final Logger Log = Logger.getAnonymousLogger();
 
-    public static void main(String[] args) {
-        String filePath = System.getProperty("user.dir") + "\\method_calls.txt";
+    private static final String dataRoot = "";
 
-        try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
-            br
-                    .lines()
-                    .map(MethodCallChecker::parseLine)
-                    .forEach(MethodCallChecker::checkMethod);
-        } catch (IOException e) {
-            e.printStackTrace();
+    private static final String classFilePath = "\\target\\classes\\";
+    private static final String inspectionClass= "file.java";
+    public static void main(String[] args) {
+        File directory = new File(dataRoot);
+        File[] files = directory.listFiles();
+        // Log.info(String.valueOf(files.length));
+        if (files != null) {
+            for (File file : files) {
+                // Log.info(file.getName());
+                if (!file.getName().endsWith(".txt")) {
+                    continue;
+                }
+                String filePath = file.getAbsolutePath();
+
+                try (BufferedReader br = new BufferedReader(new FileReader(filePath))) {
+                    ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+                    PrintStream customPrintStream = new PrintStream(outputStream);
+                    PrintStream originalPrintStream = System.out;
+                    System.setOut(customPrintStream);
+                    br
+                            .lines()
+                            .map(MethodCallChecker::parseLine)
+                            .forEach(MethodCallChecker::checkMethod)
+                            ;
+                    System.setOut(originalPrintStream);
+                    if (!outputStream.toString().isEmpty()) {
+                        System.out.println(file.getName());
+                        System.out.println(outputStream);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
         }
     }
 
@@ -46,11 +72,12 @@ public class MethodCallChecker {
     }
 
     private static void checkMethod(String[] parts) {
+        // System.out.println("Checking method " + Arrays.toString(parts));
         if (parts.length >= 2) {
             String methodName = parts[0];
             String[] params = Arrays.copyOfRange(parts, 1, parts.length);
 
-            Class<?> clazz = DummyClass.class;
+            Class<?> clazz = instantiateClassFromUrl();
 
             Class<?>[] paramTypes = Stream
                     .generate(() -> String.class)
@@ -66,7 +93,7 @@ public class MethodCallChecker {
             // Method method = clazz.getMethod(methodName, paramTypes);
 
             if (method != null) {
-                String filePath = System.getProperty("user.dir") + "\\src\\main\\java\\DummyClass.java";
+                String filePath = inspectionClass;
 
                 CompilationUnit compilationUnit = null;
                 try {
@@ -86,16 +113,15 @@ public class MethodCallChecker {
                     if (similarMethods.contains(methodName)) {
                         return;
                     }
-                    System.out.println("Method " + methodName + " does not exist. \nFound similar methods, enter " +
-                            "selection to replace." +
+                    System.out.println("Method " + methodName + " does not exist. \nFound similar methods" +
                             " \n");
                     for (int i = 0 ; i < similarMethods.size(); ++i) {
                      System.out.printf("[%d] %s%n\n", i, similarMethods.get(i));
                     }
-                    int idx = readUserInput();
-                    applyFix(methodName, similarMethods.get(idx));
+                    // int idx = readUserInput();
+                    // applyFix(methodName, similarMethods.get(idx));
                 } else {
-                    System.out.println("Method " + methodName + " does not exist or parameter types do not match.");
+                    //System.out.println("Method " + methodName + " does not exist or parameter types do not match.");
                 }
             }
         }
@@ -103,8 +129,8 @@ public class MethodCallChecker {
 
     private static boolean validateParameters(String methodName, NodeList<Parameter> nodes, List<String> params) {
         if (nodes.size() != params.size()) {
-            System.out.println("Expected method {" + methodName + "} to have " + nodes.size() +
-                            " params, found " + params.size() + " params");
+            //System.out.println("Expected method {" + methodName + "} to have " + nodes.size() +
+            //                 " params, found " + params.size() + " params");
             return false;
         }
 
@@ -126,7 +152,7 @@ public class MethodCallChecker {
 
         // executeAndPrintOutput(List.of("cmd", "/c" , "dir"));
         // String currentDirectory = System.getProperty("user.dir");
-        // System.out.println("Current directory: " + currentDirectory);
+        // //System.out.println("Current directory: " + currentDirectory);
         // List<String> commands = new ArrayList<>();
         // commands.add("powershell");
         // commands.add("-Command");
@@ -146,15 +172,15 @@ public class MethodCallChecker {
         //     int exitCode = process.waitFor();
         //
         //     if (exitCode == 0) {
-        //         System.out.println("Text replacement completed successfully.");
+        //         //System.out.println("Text replacement completed successfully.");
         //     } else {
-        //         System.out.println("Text replacement encountered an error.");
+        //         //System.out.println("Text replacement encountered an error.");
         //     }
         // } catch (IOException | InterruptedException e) {
         //     Log.info(e.getMessage());
         // }
 
-        replaceTextInFiles(System.getProperty("user.dir"), toBeReplaced, replacement);
+        //replaceTextInFiles(dataRoot, toBeReplaced, replacement);
 
     }
 
@@ -186,26 +212,24 @@ public class MethodCallChecker {
 
     private static boolean validateParameter(String methodName, Parameter node, String param) {
         Function<String, Boolean> validator;
-
-        PrimitiveType paramType = node.getType().asPrimitiveType().toPrimitiveType().get();
         String paramName = node.getNameAsString();
 
-        if (paramType.equals(PrimitiveType.charType())) {
+        if (node.getType().toString().equals("String")) {
             validator = s -> true;
-        } else if (paramType.equals(PrimitiveType.intType())) {
+        } else if (node.getType().toString().equals("int")) {
             validator = s -> s.matches("\\d+");
-        } else if (paramType.equals(PrimitiveType.charType())) {
+        } else if (node.getType().toString().equals("char")) {
             validator = s -> s.matches("-?\\d+(\\.\\d+)?");
-        } else if (paramType.equals(PrimitiveType.booleanType())) {
+        } else if (node.getType().toString().equals("boolean")) {
             validator = s -> s.equalsIgnoreCase("true") || s.equalsIgnoreCase("false");
         } else {
             validator = s -> false;
         }
 
         if (!validator.apply(param)) {
-            System.out.println("Expected method {" + methodName + "} parameter {" +  paramName + "} to be " + paramType +
-                    ", but " +
-                    "found " + param);
+            //System.out.println("Expected method {" + methodName + "} parameter {" +  paramName + "} to be " + paramType +
+            //         ", but " +
+            //         "found " + param);
             return false;
         }
         return true;
@@ -218,8 +242,9 @@ public class MethodCallChecker {
 
         // Log.info("Checking target method " + targetMethod);
         for (Method method : methods) {
-            String methodName = method.getName();
 
+            String methodName = method.getName();
+            // System.out.println(methodName);
             double similarity = jaroWinklerDistance.apply(methodName, targetMethod);
             // Log.info(methodName + " with similarity " + similarity);
             if (similarity < 0.1) { // You can adjust the threshold as needed
@@ -238,21 +263,48 @@ public class MethodCallChecker {
             int exitCode = process.waitFor();
 
             if (exitCode == 0) {
-                System.out.println("Command executed successfully.");
+                //System.out.println("Command executed successfully.");
 
                 // Read and display the output of the process
                 InputStream inputStream = process.getInputStream();
                 BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    System.out.println(line);
+                    //System.out.println(line);
                 }
                 reader.close();
             } else {
-                System.out.println("Command encountered an error.");
+                //System.out.println("Command encountered an error.");
             }
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
         }
+    }
+
+    private static Class<?> instantiateClassFromUrl() {
+        String className = "com.example.CommandExecutor"; // Fully qualified class name
+
+        try {
+            // URL[] urls = new URL[]{new File(classFilePath).toURI().toURL()};
+            // System.out.println(Arrays.toString(urls));
+            // URLClassLoader classLoader = new URLClassLoader(urls);
+            //
+            // Class<?> loadedClass = classLoader.loadClass(className);
+            //
+            // Constructor<?> constructor = loadedClass.getConstructor();
+            //
+            // return (Class<?>) constructor.newInstance();
+
+            CustomClassLoader customClassLoader = new CustomClassLoader(ClassLoader.getSystemClassLoader(), classFilePath);
+
+            // Load the class using the custom class loader
+            Class<?> loadedClass = customClassLoader.loadClass(className);
+
+            return (Class<?>) loadedClass;
+
+        } catch (RuntimeException | ClassNotFoundException e) {
+            Log.info(e.getMessage());
+        }
+        return null;
     }
 }
