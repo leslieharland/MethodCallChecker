@@ -33,6 +33,8 @@ public class MethodCallChecker {
 
     private static final String classFilePath = "\\target\\classes\\";
     private static final String inspectionClass= "file.java";
+
+    private static final Class<?> clazz = instantiateClassFromUrl();
     public static void main(String[] args) {
         File directory = new File(dataRoot);
         File[] files = directory.listFiles();
@@ -76,8 +78,6 @@ public class MethodCallChecker {
         if (parts.length >= 2) {
             String methodName = parts[0];
             String[] params = Arrays.copyOfRange(parts, 1, parts.length);
-
-            Class<?> clazz = instantiateClassFromUrl();
 
             Class<?>[] paramTypes = Stream
                     .generate(() -> String.class)
